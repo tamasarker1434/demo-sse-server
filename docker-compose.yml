@@ -1,0 +1,7 @@
+version: '3.8'
+
+services:
+  sse-service:
+    build: .
+    ports:
+      - "8071:8071"
