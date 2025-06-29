@@ -1,6 +1,6 @@
 package com.example.demoSseProject;
 
-import com.example.demoSseProject.healper.EventPublisherSimulator;
+import com.example.demoSseProject.simulator.EventPublisherSimulator;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
