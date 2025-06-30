@@ -1,51 +1,71 @@
 package com.example.demoSseProject.simulator;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import reactor.core.publisher.Sinks;
 
+import java.io.InputStream;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class EventPublisherSimulator {
 
     private final Sinks.Many<String> eventSink;
-    private final Random random = new Random();
+    private final Random rnd = ThreadLocalRandom.current();
 
-    // Student list
-    private final List<Map<String, String>> students = List.of(
-            Map.of("id", "std-101", "name", "Alice", "dept", "IT"),
-            Map.of("id", "std-102", "name", "Bob", "dept", "Biochemistry"),
-            Map.of("id", "std-103", "name", "Charlie", "dept", "Environmental-Science"),
-            Map.of("id", "std-104", "name", "Diana", "dept", "IT"),
-            Map.of("id", "std-105", "name", "Eve", "dept", "Biochemistry"),
-            Map.of("id", "std-106", "name", "Frank", "dept", "Environmental-Science"),
-            Map.of("id", "std-107", "name", "Grace", "dept", "IT"),
-            Map.of("id", "std-108", "name", "Hank", "dept", "Biochemistry"),
-            Map.of("id", "std-109", "name", "Ivy", "dept", "Environmental-Science"),
-            Map.of("id", "std-110", "name", "Jack", "dept", "IT"),
-            Map.of("id", "std-111", "name", "Karen", "dept", "Biochemistry"),
-            Map.of("id", "std-112", "name", "Leo", "dept", "Environmental-Science"),
-            Map.of("id", "std-113", "name", "Mona", "dept", "IT"),
-            Map.of("id", "std-114", "name", "Nate", "dept", "Biochemistry"),
-            Map.of("id", "std-115", "name", "Olivia", "dept", "Environmental-Science")
-    );
-
-    private final List<String> midActivities = List.of(
-            "requested_clarification",
-            "paused_exam",
-            "check_online"
-    );
-
-    private static class StudentState {
-        boolean started = false;
-    }
-
-    private final Map<String, StudentState> stateMap = new ConcurrentHashMap<>();
+    private List<Map<String, String>> entities = List.of();
+    private List<String> activities = List.of();
+    private String template = "";
+    private int intervalMs = 1000;
 
     public EventPublisherSimulator(Sinks.Many<String> sink) {
         this.eventSink = sink;
-        for (Map<String, String> s : students) {
-            stateMap.put(s.get("id"), new StudentState());
+        loadConfig();
+    }
+
+    private void loadConfig() {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            InputStream is = getClass().getClassLoader().getResourceAsStream("dataFiles/stream-config.json");
+
+            if (is == null)
+                throw new RuntimeException("Missing stream-config.json in resources/dataFiles");
+
+            JsonNode root = mapper.readTree(is);
+
+            // Load entities from "data" field
+            JsonNode dataNode = root.get("data");
+            if (dataNode == null || !dataNode.isArray() || dataNode.size() == 0)
+                throw new IllegalStateException("Missing or invalid 'data' array in JSON");
+
+            entities = mapper.convertValue(dataNode, new TypeReference<List<Map<String, String>>>() {});
+
+            // Load activities
+            JsonNode activitiesNode = root.get("activities");
+            if (activitiesNode != null && activitiesNode.isArray()) {
+                activities = mapper.convertValue(activitiesNode, new TypeReference<List<String>>() {});
+            }
+
+            // Load event template
+            template = Optional.ofNullable(root.get("eventTemplate"))
+                    .map(JsonNode::asText)
+                    .orElseThrow(() -> new IllegalStateException("Missing 'eventTemplate' in JSON"));
+
+            // Load emit interval
+            JsonNode intervalNode = root.path("streamPattern").path("emitIntervalMs");
+            if (intervalNode.isInt()) {
+                intervalMs = intervalNode.asInt();
+            }
+
+            System.out.printf("✔ Loaded %d entities, %d activities, interval %d ms%n",
+                    entities.size(), activities.size(), intervalMs);
+
+        } catch (Exception e) {
+            throw new RuntimeException("❌ Failed to load stream-config.json", e);
         }
     }
 
@@ -53,33 +73,41 @@ public class EventPublisherSimulator {
         new Thread(() -> {
             while (true) {
                 try {
-                    Thread.sleep(1000); // emit every second
+                    Thread.sleep(intervalMs);
                 } catch (InterruptedException ignored) {}
 
-                Map<String, String> student = students.get(random.nextInt(students.size()));
-                StudentState state = stateMap.get(student.get("id"));
+                Map<String, String> ent = entities.get(rnd.nextInt(entities.size()));
+                String activity = activities.isEmpty() ? "unknown_activity" : activities.get(rnd.nextInt(activities.size()));
+                String timestamp = Instant.now().toString();
 
-                String activity;
-                if (!state.started) {
-                    activity = "started_exam";
-                    state.started = true;
-                } else {
-                    int decision = random.nextInt(3); // 0, 1 = midActivities, 2 = submit
-                    if (decision < 2) {
-                        activity = midActivities.get(decision);
-                    } else {
-                        activity = "submitted_answer";
-                        state.started = false; // reset so next activity is "started exam"
-                    }
+                Map<String, String> context = new HashMap<>(ent);
+                context.put("activity", activity);
+                context.put("timestamp", timestamp);
+
+                String event = render(template, context);
+                Sinks.EmitResult result = eventSink.tryEmitNext(event);
+
+                if (result.isFailure()) {
+                    System.err.println("⚠ Failed to emit event: " + result);
                 }
-
-                String event = String.format(
-                        "{ \"studentId\": \"%s\", \"name\": \"%s\", \"dept\": \"%s\", \"activity\": \"%s\", \"timestamp\": \"%s\" }",
-                        student.get("id"), student.get("name"), student.get("dept"), activity, Instant.now()
-                );
-
-                eventSink.tryEmitNext(event);
             }
-        }).start();
+        }, "sse-simulator-thread").start();
+    }
+
+
+    // Regex for Mustache-style {{key}} placeholders
+    private static final Pattern token = Pattern.compile("\\{\\{\\s*(\\w+)\\s*}}");
+
+    // Replaces {{key}} with corresponding value from context
+    private static String render(String tpl, Map<String, String> ctx) {
+        Matcher m = token.matcher(tpl);
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String key = m.group(1).trim();
+            String val = ctx.getOrDefault(key, "");
+            m.appendReplacement(sb, Matcher.quoteReplacement(val));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 }

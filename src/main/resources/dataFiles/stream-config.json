@@ -1,0 +1,33 @@
+{
+  "data": [
+    { "id": "std-101", "name": "Alice",   "dept": "IT" },
+    { "id": "std-102", "name": "Bob",     "dept": "Biochemistry" },
+    { "id": "std-103", "name": "Charlie", "dept": "Environmental-Science" },
+    { "id": "std-104", "name": "Diana",   "dept": "IT" },
+    { "id": "std-105", "name": "Eve",     "dept": "Biochemistry" },
+    { "id": "std-106", "name": "Frank",   "dept": "Environmental-Science" },
+    { "id": "std-107", "name": "Grace",   "dept": "IT" },
+    { "id": "std-108", "name": "Hank",    "dept": "Biochemistry" },
+    { "id": "std-109", "name": "Ivy",     "dept": "Environmental-Science" },
+    { "id": "std-110", "name": "Jack",    "dept": "IT" },
+    { "id": "std-111", "name": "Karen",   "dept": "Biochemistry" },
+    { "id": "std-112", "name": "Leo",     "dept": "Environmental-Science" },
+    { "id": "std-113", "name": "Mona",    "dept": "IT" },
+    { "id": "std-114", "name": "Nate",    "dept": "Biochemistry" },
+    { "id": "std-115", "name": "Olivia",  "dept": "Environmental-Science" }
+  ],
+
+  "activities": [
+    "attended_lecture",
+    "submitted_assignment",
+    "took_quiz",
+    "joined_lab",
+    "check_portal"
+  ],
+
+  "eventTemplate": "{ \"studentId\": \"{{id}}\", \"name\": \"{{name}}\", \"dept\": \"{{dept}}\", \"activity\": \"{{activity}}\", \"timestamp\": \"{{timestamp}}\" }",
+
+  "streamPattern": {
+    "emitIntervalMs": 1000
+  }
+}
