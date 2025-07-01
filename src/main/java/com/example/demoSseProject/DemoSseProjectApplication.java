@@ -12,12 +12,12 @@ public class DemoSseProjectApplication {
 	public static void main(String[] args) {
 		var context = SpringApplication.run(DemoSseProjectApplication.class, args);
 
-		// Get the event sink bean
-		Sinks.Many<String> eventSink = context.getBean("eventSink", Sinks.Many.class);
-
-		// Start publishing random events
-		EventPublisherSimulator simulator = new EventPublisherSimulator(eventSink);
-		simulator.startEmitting();
+//		// Get the event sink bean
+//		Sinks.Many<String> eventSink = context.getBean("eventSink", Sinks.Many.class);
+//
+//		// Start publishing random events
+//		EventPublisherSimulator simulator = new EventPublisherSimulator(eventSink);
+//		simulator.startEmitting();
 	}
 
 	@Bean(name = "eventSink")
