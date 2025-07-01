@@ -16,7 +16,7 @@ public class SseController {
         this.simulator = new EventPublisherSimulator(sink);
     }
 
-    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @GetMapping(value = "/sse/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> stream() {
         simulator.startEmitting();
         return simulator.getEventSink().asFlux()
