@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import reactor.core.publisher.Sinks;
+import reactor.core.publisher.FluxSink;
 
 import java.io.InputStream;
 import java.time.Instant;
@@ -22,11 +23,16 @@ public class EventPublisherSimulator {
     private String template = "";
     private int intervalMs = 1000;
 
+    private volatile boolean running = false;
+    private Thread emitThread;
+
     public EventPublisherSimulator(Sinks.Many<String> sink) {
         this.eventSink = sink;
         loadConfig();
     }
-
+    public Sinks.Many<String> getEventSink() {
+        return eventSink;
+    }
     private void loadConfig() {
         try {
             ObjectMapper mapper = new ObjectMapper();
@@ -36,48 +42,33 @@ public class EventPublisherSimulator {
                 throw new RuntimeException("Missing stream-config.json in resources/dataFiles");
 
             JsonNode root = mapper.readTree(is);
-
-            // Load entities from "data" field
-            JsonNode dataNode = root.get("data");
-            if (dataNode == null || !dataNode.isArray() || dataNode.size() == 0)
-                throw new IllegalStateException("Missing or invalid 'data' array in JSON");
-
-            entities = mapper.convertValue(dataNode, new TypeReference<List<Map<String, String>>>() {});
-
-            // Load activities
-            JsonNode activitiesNode = root.get("activities");
-            if (activitiesNode != null && activitiesNode.isArray()) {
-                activities = mapper.convertValue(activitiesNode, new TypeReference<List<String>>() {});
-            }
-
-            // Load event template
-            template = Optional.ofNullable(root.get("eventTemplate"))
-                    .map(JsonNode::asText)
-                    .orElseThrow(() -> new IllegalStateException("Missing 'eventTemplate' in JSON"));
-
-            // Load emit interval
-            JsonNode intervalNode = root.path("streamPattern").path("emitIntervalMs");
-            if (intervalNode.isInt()) {
-                intervalMs = intervalNode.asInt();
-            }
+            entities = mapper.convertValue(root.get("data"), new TypeReference<List<Map<String, String>>>() {});
+            activities = mapper.convertValue(root.get("activities"), new TypeReference<List<String>>() {});
+            template = root.path("eventTemplate").asText();
+            intervalMs = root.path("streamPattern").path("emitIntervalMs").asInt(1000);
 
             System.out.printf("✔ Loaded %d entities, %d activities, interval %d ms%n",
                     entities.size(), activities.size(), intervalMs);
-
         } catch (Exception e) {
             throw new RuntimeException("❌ Failed to load stream-config.json", e);
         }
     }
 
-    public void start() {
-        new Thread(() -> {
-            while (true) {
+    /** Called when a subscriber connects */
+    public synchronized void startEmitting() {
+        if (running) return;
+
+        running = true;
+        emitThread = new Thread(() -> {
+            while (running) {
                 try {
                     Thread.sleep(intervalMs);
-                } catch (InterruptedException ignored) {}
+                } catch (InterruptedException e) {
+                    break;
+                }
 
                 Map<String, String> ent = entities.get(rnd.nextInt(entities.size()));
-                String activity = activities.isEmpty() ? "unknown_activity" : activities.get(rnd.nextInt(activities.size()));
+                String activity = activities.get(rnd.nextInt(activities.size()));
                 String timestamp = Instant.now().toString();
 
                 Map<String, String> context = new HashMap<>(ent);
@@ -91,14 +82,22 @@ public class EventPublisherSimulator {
                     System.err.println("⚠ Failed to emit event: " + result);
                 }
             }
-        }, "sse-simulator-thread").start();
+        }, "event-simulator-thread");
+        emitThread.setDaemon(true);
+        emitThread.start();
     }
 
+    /** Called when the subscriber disconnects */
+    public synchronized void stopEmitting() {
+        running = false;
+        if (emitThread != null) {
+            emitThread.interrupt();
+            emitThread = null;
+        }
+    }
 
-    // Regex for Mustache-style {{key}} placeholders
     private static final Pattern token = Pattern.compile("\\{\\{\\s*(\\w+)\\s*}}");
 
-    // Replaces {{key}} with corresponding value from context
     private static String render(String tpl, Map<String, String> ctx) {
         Matcher m = token.matcher(tpl);
         StringBuffer sb = new StringBuffer();

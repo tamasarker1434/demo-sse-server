@@ -1,6 +1,6 @@
 package com.example.demoSseProject.controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import com.example.demoSseProject.simulator.EventPublisherSimulator;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -10,12 +10,20 @@ import reactor.core.publisher.Sinks;
 @RestController
 public class SseController {
 
-    @Autowired
-    private Sinks.Many<String> eventSink;
+    private final EventPublisherSimulator simulator;
 
-    @GetMapping(value = "/sse/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> streamEvents() {
-        return eventSink.asFlux();
+    public SseController(Sinks.Many<String> sink) {
+        this.simulator = new EventPublisherSimulator(sink);
+    }
+
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> stream() {
+        simulator.startEmitting();
+        return simulator.getEventSink().asFlux()
+                .doFinally(signalType -> simulator.stopEmitting());
     }
 }
+
+
+
 

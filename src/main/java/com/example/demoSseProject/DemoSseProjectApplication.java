@@ -17,7 +17,7 @@ public class DemoSseProjectApplication {
 
 		// Start publishing random events
 		EventPublisherSimulator simulator = new EventPublisherSimulator(eventSink);
-		simulator.start();
+		simulator.startEmitting();
 	}
 
 	@Bean(name = "eventSink")

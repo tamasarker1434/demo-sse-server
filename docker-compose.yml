@@ -1,0 +1,19 @@
+version: '3.9'
+
+services:
+  demo-sse-project:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: demo-sse-server
+    ports:
+      - "8071:8071"
+    restart: unless-stopped
+    networks:
+      - app-network
+    # Uncomment the line below if you ever want to run it with compose
+    # command: ["java", "-jar", "target/demo-sse-server-0.0.1-SNAPSHOT.jar"]
+
+networks:
+  app-network:
+    driver: bridge
